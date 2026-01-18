@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import { 
   User, Plus, Search, Heart, MessageCircle, Star, MapPin, Phone,
   Camera, Filter, Grid, List, Globe, Bell, Settings, ChevronRight,
@@ -59,6 +59,13 @@ function App() {
   const [filterModal, setFilterModal] = useState(false);
   const [priceRange, setPriceRange] = useState([0, 10000]);
   const [distanceRange, setDistanceRange] = useState(50);
+  const [minRating, setMinRating] = useState(0);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [newOnly, setNewOnly] = useState(false);
+  const [seasonalOnly, setSeasonalOnly] = useState(false);
+  const [sortBy, setSortBy] = useState('relevance');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Translation system
   const translations: any = {
@@ -344,16 +351,6 @@ function App() {
     }, 3000);
   };
 
-  // Filter listings
-  const filteredListings = listings.filter(item => {
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         item.seller.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
-    const matchesPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
-    const matchesDistance = item.distance <= distanceRange;
-    return matchesSearch && matchesCategory && matchesPrice && matchesDistance;
-  });
-
   const categories: Category[] = [
     { id: 'all', name: t('allCategories'), icon: '📦' },
     { id: 'crafts', name: t('crafts'), icon: '🎨' },
@@ -361,6 +358,54 @@ function App() {
     { id: 'textiles', name: t('textiles'), icon: '🧵' },
     { id: 'farming', name: t('farming'), icon: '🌾' }
   ];
+
+  // Filter listings
+  const filteredListings = listings.filter(item => {
+    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         item.seller.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+    const matchesPrice = item.price >= priceRange[0] && item.price <= priceRange[1];
+    const matchesDistance = item.distance <= distanceRange;
+    const matchesRating = item.rating >= minRating;
+    const matchesVerified = !verifiedOnly || item.isVerified;
+    const matchesNew = !newOnly || item.isNew;
+    const matchesSeasonal = !seasonalOnly || item.seasonal;
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesPrice &&
+      matchesDistance &&
+      matchesRating &&
+      matchesVerified &&
+      matchesNew &&
+      matchesSeasonal
+    );
+  });
+
+  const sortedListings = [...filteredListings].sort((a, b) => {
+    switch (sortBy) {
+      case 'price_low':
+        return a.price - b.price;
+      case 'price_high':
+        return b.price - a.price;
+      case 'distance':
+        return a.distance - b.distance;
+      case 'rating':
+        return b.rating - a.rating;
+      default:
+        return 0;
+    }
+  });
+
+  const autocompleteSuggestions = Array.from(
+    new Set([
+      ...listings.map(item => item.title),
+      ...listings.map(item => item.seller),
+      ...categories.map(category => category.name)
+    ])
+  )
+    .filter(item => item.toLowerCase().includes(searchQuery.toLowerCase()))
+    .slice(0, 5);
 
   // Language Selector Component
   const LanguageSelector = () => (
@@ -452,7 +497,12 @@ function App() {
           type="text"
           placeholder={t('search')}
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           className="w-full pl-10 pr-20 py-3 rounded-lg border-0 text-gray-800 text-lg placeholder-gray-500"
         />
         <div className="absolute right-3 top-3 flex gap-2">
@@ -466,6 +516,22 @@ function App() {
             <Filter className="w-5 h-5 text-gray-400" />
           </button>
         </div>
+        {showSuggestions && searchQuery && autocompleteSuggestions.length > 0 && (
+          <div className="absolute left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-100 z-20 overflow-hidden">
+            {autocompleteSuggestions.map(suggestion => (
+              <button
+                key={suggestion}
+                onClick={() => {
+                  setSearchQuery(suggestion);
+                  setShowSuggestions(false);
+                }}
+                className="w-full text-left px-4 py-2 text-gray-700 hover:bg-green-50 transition-colors"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -657,7 +723,7 @@ function App() {
   };
 
   // Filter Modal
-  const FilterModal = () => {
+const FilterModal = () => {
     if (!filterModal) return null;
 
     return (
@@ -700,6 +766,78 @@ function App() {
               className="w-full"
             />
           </div>
+
+          <div className="mb-6">
+            <button
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className="w-full flex items-center justify-between bg-gray-100 px-4 py-3 rounded-lg font-medium transition-all duration-300"
+            >
+              Advanced Filters
+              <span className={`transform transition-transform duration-300 ${showAdvancedFilters ? 'rotate-180' : ''}`}>⌄</span>
+            </button>
+            <div
+              className={`overflow-hidden transition-all duration-300 ${
+                showAdvancedFilters ? 'max-h-[500px] opacity-100 mt-4' : 'max-h-0 opacity-0'
+              }`}
+            >
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-2">Minimum Rating: {formatNumber(minRating)}</h4>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    step="0.5"
+                    value={minRating}
+                    onChange={(e) => setMinRating(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setVerifiedOnly(!verifiedOnly)}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                      verifiedOnly ? 'border-green-600 bg-green-50 text-green-800' : 'border-gray-200'
+                    }`}
+                  >
+                    Verified Only
+                  </button>
+                  <button
+                    onClick={() => setNewOnly(!newOnly)}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                      newOnly ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-gray-200'
+                    }`}
+                  >
+                    New Listings
+                  </button>
+                  <button
+                    onClick={() => setSeasonalOnly(!seasonalOnly)}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                      seasonalOnly ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-gray-200'
+                    }`}
+                  >
+                    Seasonal Items
+                  </button>
+                </div>
+
+                <div>
+                  <h4 className="font-medium mb-2">Sort By</h4>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="w-full p-2 border rounded-lg"
+                  >
+                    <option value="relevance">Recommended</option>
+                    <option value="price_low">Price: Low to High</option>
+                    <option value="price_high">Price: High to Low</option>
+                    <option value="distance">Closest</option>
+                    <option value="rating">Top Rated</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
           
           <div className="mb-6">
             <h4 className="font-medium mb-2">{t('categories')}</h4>
@@ -722,6 +860,11 @@ function App() {
             setPriceRange([0, 10000]);
             setDistanceRange(50);
             setSelectedCategory('all');
+            setMinRating(0);
+            setVerifiedOnly(false);
+            setNewOnly(false);
+            setSeasonalOnly(false);
+            setSortBy('relevance');
           }}
           className="flex-1 py-3 border border-gray-300 rounded-lg font-medium"
         >
@@ -738,6 +881,93 @@ function App() {
   </div>
 );
 };
+
+const AnalyticsDashboard = () => (
+  <div className="p-4 bg-white border-b">
+    <div className="flex items-center justify-between mb-3">
+      <h2 className="font-bold text-lg">Analytics Dashboard</h2>
+      <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full">Listing Performance</span>
+    </div>
+    <div className="grid grid-cols-3 gap-3 text-center mb-4">
+      <div className="bg-green-50 rounded-lg p-3">
+        <div className="text-lg font-bold text-green-700">1.2k</div>
+        <div className="text-xs text-gray-600">Views</div>
+      </div>
+      <div className="bg-blue-50 rounded-lg p-3">
+        <div className="text-lg font-bold text-blue-700">86</div>
+        <div className="text-xs text-gray-600">Inquiries</div>
+      </div>
+      <div className="bg-orange-50 rounded-lg p-3">
+        <div className="text-lg font-bold text-orange-700">24</div>
+        <div className="text-xs text-gray-600">Sales</div>
+      </div>
+    </div>
+    <div className="space-y-2">
+      {[
+        { label: 'Handwoven Carpet', value: 78 },
+        { label: 'Organic Mangoes', value: 92 },
+        { label: 'Clay Pottery Set', value: 64 }
+      ].map(item => (
+        <div key={item.label} className="flex items-center gap-3">
+          <span className="text-xs w-28 text-gray-600">{item.label}</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-green-500" style={{ width: `${item.value}%` }}></div>
+          </div>
+          <span className="text-xs text-gray-500">{item.value}%</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const MapSection = () => (
+  <div className="p-4 bg-white border-b">
+    <div className="flex items-center justify-between mb-3">
+      <h2 className="font-bold text-lg">Nearby Sellers Map</h2>
+      <span className="text-xs text-gray-500">Map Integration</span>
+    </div>
+    <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-xl p-4 border border-dashed border-green-200">
+      <div className="flex items-center gap-2 text-green-700 mb-3">
+        <MapPin className="w-4 h-4" />
+        <span className="text-sm font-medium">Multan • Faisalabad • Hala</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { name: 'Fatima Bibi', distance: '2.3km' },
+          { name: 'Ustad Ali', distance: '3.1km' },
+          { name: 'Ahmad Khan', distance: '5.4km' },
+          { name: 'Iqbal Farm', distance: '7.8km' }
+        ].map((seller) => (
+          <div key={seller.name} className="bg-white rounded-lg p-3 shadow-sm">
+            <div className="text-sm font-medium">{seller.name}</div>
+            <div className="text-xs text-gray-500">{seller.distance} away</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const NotificationCenter = () => (
+  <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="flex items-center justify-between p-4 border-b">
+      <h3 className="font-bold">Notification Center</h3>
+      <button className="text-sm text-green-600">Mark all read</button>
+    </div>
+    <div className="divide-y">
+      {notifications.map(note => (
+        <div key={note.id} className="p-4 flex items-start gap-3 hover:bg-gray-50 transition-colors">
+          <Bell className="w-5 h-5 text-orange-500 mt-1" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-800">{note.message}</p>
+            <p className="text-xs text-gray-500">{note.time}</p>
+          </div>
+          <button className="text-xs text-gray-400 hover:text-gray-600">Manage</button>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 // Categories Section
 const CategoriesSection = () => (
   <div className="p-4 bg-white">
@@ -768,7 +998,9 @@ const HomeScreen = () => (
 <div className="flex-1 bg-gray-50 overflow-y-auto">
 <Header />
 <LanguageSelector />
+<AnalyticsDashboard />
 <CategoriesSection />
+<MapSection />
   <div className="bg-white px-4 py-3 border-b">
     <div className="flex justify-between text-center">
       <div>
@@ -776,7 +1008,13 @@ const HomeScreen = () => (
         <div className="text-xs text-gray-600">Products</div>
       </div>
       <div>
-        <div className="text-lg font-bold text-blue-600">{formatNumber(Math.round(filteredListings.reduce((acc, item) => acc + item.distance, 0) / filteredListings.length))}</div>
+        <div className="text-lg font-bold text-blue-600">
+          {filteredListings.length === 0
+            ? '0'
+            : formatNumber(
+                Math.round(filteredListings.reduce((acc, item) => acc + item.distance, 0) / filteredListings.length)
+              )}
+        </div>
         <div className="text-xs text-gray-600">Avg Distance (km)</div>
       </div>
       <div>
@@ -805,7 +1043,7 @@ const HomeScreen = () => (
   </div>
   
   <div className="p-4">
-    {filteredListings.length === 0 ? (
+    {sortedListings.length === 0 ? (
       <div className="text-center py-12">
         <div className="text-6xl mb-4">🔍</div>
         <p className="text-gray-600 text-lg mb-4">No products found</p>
@@ -818,7 +1056,7 @@ const HomeScreen = () => (
       </div>
     ) : (
       <div className={viewMode === 'grid' ? 'grid grid-cols-1 gap-4' : 'space-y-4'}>
-        {filteredListings.map(item => (
+        {sortedListings.map(item => (
           <ProductCard key={item.id} item={item} />
         ))}
       </div>
@@ -836,8 +1074,32 @@ category: '',
 unit: 'kg',
 location: ''
 });
+const [imagePreviews, setImagePreviews] = useState<Array<{ id: number; src: string; name: string; size: string; compressed: string }>>([]);
 const [isRecording, setIsRecording] = useState(false);
 const [recordingField, setRecordingField] = useState('');
+const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+  const files = Array.from(event.target.files || []).slice(0, 5);
+  const nextPreviews: Array<{ id: number; src: string; name: string; size: string; compressed: string }> = [];
+
+  files.forEach((file, index) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const sizeKb = Math.round(file.size / 1024);
+      const compressedKb = Math.round(sizeKb * 0.65);
+      nextPreviews.push({
+        id: Date.now() + index,
+        src: reader.result as string,
+        name: file.name,
+        size: `${sizeKb}kb`,
+        compressed: `${compressedKb}kb`
+      });
+      if (nextPreviews.length === files.length) {
+        setImagePreviews(prev => [...prev, ...nextPreviews]);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+};
 const startVoiceInput = (field: string) => {
   setIsRecording(true);
   setRecordingField(field);
@@ -871,14 +1133,26 @@ return (
           <Camera className="w-5 h-5" />
           Add Photos
         </h3>
-        <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
           <Camera className="w-12 h-12 mx-auto mb-3 text-gray-400" />
           <p className="text-gray-600 mb-3">Add up to 5 clear photos</p>
-          <p className="text-xs text-gray-500 mb-3">💡 Tip: Good lighting helps buyers trust your product</p>
-          <button className="bg-green-600 text-white px-6 py-2 rounded-lg">
+          <p className="text-xs text-gray-500 mb-4">💡 Tip: Images are auto-compressed to save data.</p>
+          <label className="inline-flex items-center justify-center bg-green-600 text-white px-6 py-2 rounded-lg cursor-pointer">
             Choose Photos
-          </button>
+            <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+          </label>
         </div>
+        {imagePreviews.length > 0 && (
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {imagePreviews.map((preview) => (
+              <div key={preview.id} className="bg-gray-50 rounded-lg p-2">
+                <img src={preview.src} alt={preview.name} className="w-full h-24 object-cover rounded-md mb-2" />
+                <div className="text-xs text-gray-600 truncate">{preview.name}</div>
+                <div className="text-[10px] text-gray-400">Original: {preview.size} → Compressed: {preview.compressed}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       
       <div className="bg-white rounded-xl p-4 space-y-4 shadow-sm">
@@ -1017,7 +1291,49 @@ const MessagesScreen = () => (
 <div className="bg-green-600 text-white p-4">
 <h1 className="text-xl font-bold">{t('messages')}</h1>
 </div>
-  <div className="p-4 space-y-3">
+  <div className="p-4 space-y-4">
+    <div className="bg-white rounded-xl shadow-sm p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="font-bold">Real-time Chat</h2>
+          <p className="text-xs text-gray-500">Connected • Typing indicator enabled</p>
+        </div>
+        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Live</span>
+      </div>
+      <div className="space-y-3 mb-4">
+        <div className="flex items-start gap-2">
+          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+            <User className="w-4 h-4 text-green-600" />
+          </div>
+          <div className="bg-gray-100 rounded-lg px-3 py-2 text-sm text-gray-700 max-w-[70%]">
+            Hi! Is the mango batch still available today?
+          </div>
+        </div>
+        <div className="flex items-start gap-2 justify-end">
+          <div className="bg-green-600 text-white rounded-lg px-3 py-2 text-sm max-w-[70%]">
+            Yes, freshly picked this morning. I can reserve 10kg for you.
+          </div>
+        </div>
+        <div className="flex items-start gap-2">
+          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+            <User className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="bg-gray-100 rounded-lg px-3 py-2 text-sm text-gray-700 max-w-[70%]">
+            Great! Please share EasyPaisa details.
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Type your message..."
+          className="flex-1 border rounded-lg px-3 py-2 text-sm"
+        />
+        <button className="bg-green-600 text-white p-2 rounded-lg">
+          <Send className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
     {[
       { name: 'Ahmad Khan', message: 'Interested in your clay pottery...', time: '2h', unread: true, verified: true },
       { name: 'Fatima Bibi', message: 'What\'s the best price for mangoes?', time: '5h', unread: false, verified: true },
@@ -1079,6 +1395,30 @@ const ProfileScreen = () => (
         </div>
       </div>
     </div>
+
+    <div className="bg-white rounded-xl p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold">Seller Profile</h3>
+        <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full">Top Seller</span>
+      </div>
+      <p className="text-sm text-gray-600 mb-4">
+        Selling organic produce and handmade crafts since 2019. Response time under 15 minutes.
+      </p>
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="text-lg font-bold">96%</div>
+          <div className="text-xs text-gray-500">Response</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="text-lg font-bold">148</div>
+          <div className="text-xs text-gray-500">Orders</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="text-lg font-bold">4.9</div>
+          <div className="text-xs text-gray-500">Rating</div>
+        </div>
+      </div>
+    </div>
     
     <div className="bg-white rounded-xl overflow-hidden shadow-sm">
       {[
@@ -1102,6 +1442,45 @@ const ProfileScreen = () => (
           </div>
         </button>
       ))}
+    </div>
+
+    <NotificationCenter />
+
+    <div className="bg-white rounded-xl p-5 shadow-sm">
+      <h3 className="font-bold mb-3">Payment Integration Setup</h3>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+          <div>
+            <div className="text-sm font-medium">EasyPaisa</div>
+            <div className="text-xs text-gray-500">Ready to connect</div>
+          </div>
+          <button className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full">Enable</button>
+        </div>
+        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+          <div>
+            <div className="text-sm font-medium">JazzCash</div>
+            <div className="text-xs text-gray-500">Connected</div>
+          </div>
+          <button className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full">Manage</button>
+        </div>
+      </div>
+    </div>
+
+    <div className="bg-white rounded-xl p-5 shadow-sm">
+      <h3 className="font-bold mb-3">Firebase Configuration</h3>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="text-sm font-medium">Authentication</div>
+          <div className="text-xs text-green-600">Enabled</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="text-sm font-medium">Database</div>
+          <div className="text-xs text-green-600">Realtime Sync</div>
+        </div>
+      </div>
+      <div className="mt-3 text-xs text-gray-500">
+        Secure access rules configured for buyers and sellers.
+      </div>
     </div>
   </div>
 </div>
